@@ -156,3 +156,20 @@ fn main() {
     println!("{}", article_again.alineas[0]);
     println!("{}", article_again.alineas[1]);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    #[test]
+    fn init_a_lex_works() -> Result<(), ()> {
+        // clean anything that existed previously
+        // technically we should check that the error if any from remove_dir_all is not found which just means the test probably never ran before
+        fs::remove_dir_all("output/test_lex");
+        Lex::init_lex("test_lex");
+        match fs::read_dir("output/test_lex/objects") {
+            Ok(something) => Ok(()),
+            Err(error) => Err(()),
+        }
+    }
+}
