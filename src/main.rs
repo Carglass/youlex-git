@@ -1,7 +1,20 @@
 use git2::Repository;
 use git2::RepositoryInitOptions;
+use serde::{Deserialize, Serialize};
 
 use std::result::Result;
+
+#[derive(Serialize, Deserialize)]
+struct Article {
+    title: String,
+    alineas: Vec<String>,
+}
+
+impl Article {
+    fn new(json_as_string: &str) -> Article {
+        serde_json::from_str(json_as_string).unwrap()
+    }
+}
 
 struct Lex {
     repo: git2::Repository,
@@ -42,6 +55,73 @@ impl Lex {
         tree_builder.insert("1", children, 0o100644)?;
         tree_builder.write()
     }
+
+    fn convert_serde_json_into_tree(&self, article: Article) -> Result<git2::Oid, git2::Error> {
+        let mut alineas_tree_builder = self.repo.treebuilder(None).unwrap();
+        alineas_tree_builder.insert(
+            "1",
+            self.create_content(article.alineas[0].as_str())?,
+            0o100644,
+        )?;
+        alineas_tree_builder.insert(
+            "2",
+            self.create_content(article.alineas[1].as_str())?,
+            0o100644,
+        )?;
+        let alineas_oid = alineas_tree_builder.write().unwrap();
+        let mut tree_builder = self.repo.treebuilder(None).unwrap();
+        tree_builder.insert(
+            "0",
+            self.create_content(article.title.as_str()).unwrap(),
+            0o100644,
+        )?;
+        tree_builder.insert("alineas", alineas_oid, 0o040000)?;
+        tree_builder.write()
+    }
+
+    fn convert_tree_into_serde_json(&self, tree_oid: git2::Oid) -> Result<Article, git2::Error> {
+        let tree = self.repo.find_tree(tree_oid).unwrap();
+        let mut title: String = "title to change".to_owned();
+        let mut alineas: Vec<String> = vec![];
+        tree.walk(
+            git2::TreeWalkMode::PreOrder,
+            |root: &str, entry: &git2::TreeEntry| {
+                match root {
+                    "" => {
+                        if let Some(git2::ObjectType::Blob) = entry.kind() {
+                            title = std::str::from_utf8(
+                                entry
+                                    .to_object(&self.repo)
+                                    .unwrap()
+                                    .as_blob()
+                                    .unwrap()
+                                    .content(),
+                            )
+                            .unwrap()
+                            .to_owned()
+                        }
+                    }
+                    "alineas/" => alineas.push(
+                        std::str::from_utf8(
+                            entry
+                                .to_object(&self.repo)
+                                .unwrap()
+                                .as_blob()
+                                .unwrap()
+                                .content(),
+                        )
+                        .unwrap()
+                        .to_owned(),
+                    ),
+                    _ => println!("nothing happens"),
+                }
+                println!("{}", root);
+                git2::TreeWalkResult::Ok
+            },
+        )
+        .unwrap();
+        Ok(Article { title, alineas })
+    }
 }
 
 fn main() {
@@ -60,4 +140,19 @@ fn main() {
         git2::Oid::from_str("08cf6101416f0ce0dda3c80e627f333854c4085c").unwrap(),
     )
     .unwrap();
+
+    let data = r#"
+        {
+            "title": "Article",
+            "alineas": [
+                "Hello",
+                "World"
+            ]
+        }"#;
+    let article = Article::new(data);
+    let tree_oid = lex.convert_serde_json_into_tree(article).unwrap();
+    let article_again = lex.convert_tree_into_serde_json(tree_oid).unwrap();
+    println!("{}", article_again.title);
+    println!("{}", article_again.alineas[0]);
+    println!("{}", article_again.alineas[1]);
 }
