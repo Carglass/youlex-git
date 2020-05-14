@@ -5,6 +5,54 @@ use serde::{Deserialize, Serialize};
 use std::result::Result;
 
 #[derive(Serialize, Deserialize)]
+struct Node {
+    title: String,
+    // should we try to get a better type for that? may need a lib to generate them anyway
+    id: String,
+    description: String,
+    child_type: String,
+    children: Vec<TreeItem>,
+}
+
+impl Node {
+    fn walk<C, D, E>(&self, self_callback: C, leaf_callback: D) -> E
+    where
+        C: Fn(&Node, Vec<E>) -> E,
+        D: Fn(&Leaf) -> E,
+    {
+        // this walk will be run in post-order
+        // create a vec to store the results of the children callbacks
+        let mut children_res : Vec<E> = vec![];
+        // get an iterator over the children
+        let iter = self.children.iter();
+        // iterate over children
+        for child in iter {
+            match child {
+                // walk on the child node, push the result into our vec
+                TreeItem::Node(node) => children_res.push(node.walk(self_callback, leaf_callback)),
+                // execute leaf callback on a leaf, push the result into our vec
+                TreeItem::Leaf(leaf) => children_res.push(leaf_callback(&leaf)),
+            }
+        }
+        // execute callback on self, plus the array of children result, return its result
+        self_callback(&self, children_res)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Leaf {
+    title: String,
+    id: String,
+    content: String,
+}
+
+#[derive(Serialize, Deserialize)]
+enum TreeItem {
+    Node(Node),
+    Leaf(Leaf),
+}
+
+#[derive(Serialize, Deserialize)]
 struct Article {
     title: String,
     alineas: Vec<String>,
@@ -18,6 +66,7 @@ impl Article {
 
 struct Lex {
     repo: git2::Repository,
+    contents: Option<Node>,
 }
 
 impl Lex {
@@ -27,7 +76,10 @@ impl Lex {
         options.no_reinit(true);
         options.bare(true);
         if let Ok(repo) = Repository::init_opts(format!("output/{}", name), &options) {
-            Lex { repo }
+            Lex {
+                repo,
+                contents: None,
+            }
         } else {
             panic!("Something went wrong with repo init");
         }
@@ -35,7 +87,8 @@ impl Lex {
 
     fn open(name: &str) -> Lex {
         if let Ok(repo) = Repository::open_bare(format!("output/{}", name)) {
-            Lex { repo }
+            // TODO clearly there is something to do here to parse the actual current content in the HEAD? 
+            Lex { repo, contents: None }
         } else {
             panic!("Something went wrong with repo open");
         }
@@ -54,6 +107,37 @@ impl Lex {
         // we use numbers to sort of represent an array in git
         tree_builder.insert("1", children, 0o100644)?;
         tree_builder.write()
+    }
+
+    fn push_contents(&self, node: Node) {
+        self.contents = Some(node);
+    }
+
+    fn save(&self) {
+        // TODO to consider taking here external contents, diff them with lex contents which would be head, and then save only what needs to be saved? 
+        if let Some(root) = &self.contents {
+            // we need to store all contents in the tree
+            // to do that we walk over the contents, passing a store in git callback
+            let node_callback = |node: Node, info_array: Vec<(git2::Oid, i32)>| -> (git2::Oid, i32) {
+                let mut tree_builder = self.repo.treebuilder(None).unwrap();
+                // add the node info in a json file
+
+                // TODO here save the node info
+
+                // loop over children save info array to add them
+                let count = 1;
+                for info in info_array.iter() {
+                    tree_builder.insert(count.to_string(), info.0, info.1);
+                }
+                let tree_oid = tree_builder.write().unwrap();
+                return (tree_oid, 0o040000);
+            };
+            // TODO create the leaf_callback
+
+            // TODO return the root oid, or rather write index and commit? 
+        } else {
+            panic!("No content to save")
+        }
     }
 
     fn convert_serde_json_into_tree(&self, article: Article) -> Result<git2::Oid, git2::Error> {
@@ -168,8 +252,8 @@ mod tests {
         fs::remove_dir_all("output/test_lex");
         Lex::init_lex("test_lex");
         match fs::read_dir("output/test_lex/objects") {
-            Ok(something) => Ok(()),
-            Err(error) => Err(()),
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
         }
     }
 }
