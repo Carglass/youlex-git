@@ -1,8 +1,31 @@
+//! # Youlex-Git
+//! 
+//! This crate is a library designed to help store structured text (arborescent table of contents) into a Git repository
+//! This provides some advantages over using a database: 
+//! - It is versioned by design.
+//! - It allows users to collaborate and merge their work, using beloved git capabilities.
+//! - Decentralization opens the door for extended offline capabilities.
+//! 
+//! A lot of fields can potentially use versioned trees for collaborative work, but it is mostly only accessible to developpers.
+//! Youlex intends to bring these capabilities to the field of legislation, but this crate will be designed to provide a generic API.
+//! 
+//! ## Data Model
+//! 
+//! As the main target is web applications, we will work on storing json files into git. 
+
 use git2::Repository;
 use git2::RepositoryInitOptions;
 use serde::{Deserialize, Serialize};
 
 use std::result::Result;
+
+fn connect(url: &str) {}
+
+mod schema {
+    struct Schema
+}
+
+
 
 #[derive(Serialize, Deserialize)]
 struct Node {
@@ -10,7 +33,6 @@ struct Node {
     // should we try to get a better type for that? may need a lib to generate them anyway
     id: String,
     description: String,
-    child_type: String,
     children: Vec<TreeItem>,
 }
 
@@ -50,18 +72,6 @@ struct Leaf {
 enum TreeItem {
     Node(Node),
     Leaf(Leaf),
-}
-
-#[derive(Serialize, Deserialize)]
-struct Article {
-    title: String,
-    alineas: Vec<String>,
-}
-
-impl Article {
-    fn new(json_as_string: &str) -> Article {
-        serde_json::from_str(json_as_string).unwrap()
-    }
 }
 
 struct Lex {
@@ -208,38 +218,6 @@ impl Lex {
     }
 }
 
-fn main() {
-    println!("Hello, world!");
-
-    let lex = Lex::open("alloitest2");
-    // let is_bare = repo.is_bare().to_string();
-    // println!("{}", is_bare);
-    // if let Ok(id) = create_content(&repo, "test content") {
-    //     if let Ok(blob) = repo.find_blob(id) {
-    //         println!("{}", std::str::from_utf8(blob.content()).unwrap());
-    //     }
-    // }
-    lex.create_tree(
-        "and onother another ne",
-        git2::Oid::from_str("08cf6101416f0ce0dda3c80e627f333854c4085c").unwrap(),
-    )
-    .unwrap();
-
-    let data = r#"
-        {
-            "title": "Article",
-            "alineas": [
-                "Hello",
-                "World"
-            ]
-        }"#;
-    let article = Article::new(data);
-    let tree_oid = lex.convert_serde_json_into_tree(article).unwrap();
-    let article_again = lex.convert_tree_into_serde_json(tree_oid).unwrap();
-    println!("{}", article_again.title);
-    println!("{}", article_again.alineas[0]);
-    println!("{}", article_again.alineas[1]);
-}
 
 #[cfg(test)]
 mod tests {
